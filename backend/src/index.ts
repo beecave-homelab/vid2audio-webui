@@ -110,9 +110,11 @@ interface ConversionJob {
   mp3Path?: string;
   error?: string;
   ws?: WebSocket; // Optionally associate with the submitting client
+  completedAt?: number; // Timestamp when job was completed
 }
 
 const conversionQueue: ConversionJob[] = [];
+const completedJobs: ConversionJob[] = [];
 let isProcessing = false;
 
 // Function to broadcast queue updates
@@ -122,7 +124,30 @@ const broadcastQueueStatus = () => {
     filename: job.originalFilename, 
     status: job.status 
   }));
-  broadcast({ type: 'queue_update', queue: queueStatus });
+  const completedStatus = completedJobs.map(job => ({ 
+    id: job.id, 
+    filename: job.originalFilename, 
+    status: job.status 
+  }));
+  broadcast({ type: 'queue_update', queue: [...queueStatus, ...completedStatus] });
+};
+
+// Function to clean up old completed jobs
+const cleanupCompletedJobs = () => {
+  const now = Date.now();
+  // Remove jobs older than 24 hours
+  const retentionPeriod = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+  while (completedJobs.length > 0 && now - (completedJobs[0].completedAt || 0) > retentionPeriod) {
+    const oldJob = completedJobs.shift();
+    console.log(`[Queue]: Removed old completed job ${oldJob?.id} from completed list.`);
+    // Optionally, delete the output file if it exists
+    if (oldJob && oldJob.mp3Path && fs.existsSync(oldJob.mp3Path)) {
+      fs.unlink(oldJob.mp3Path, (err) => {
+        if (err) console.error(`[Cleanup]: Failed to delete file ${oldJob.mp3Path}:`, err);
+        else console.log(`[Cleanup]: Deleted file ${oldJob.mp3Path} for old job ${oldJob.id}`);
+      });
+    }
+  }
 };
 
 // --- Queue Processing Logic ---
@@ -198,27 +223,36 @@ const processQueue = async () => {
     broadcast({ type: 'job_error', jobId: job.id, filename: job.originalFilename, error: job.error });
   } finally {
     // Now that processing for THIS job is done (success or error), 
-    // we can potentially remove it or move to the next logic.
-    // For now, let's leave completed/errored jobs in the queue array
-    // so they are displayed in the frontend.
-    
-    // If we wanted to remove completed jobs:
-    // conversionQueue.shift(); // Remove the job we just processed
-
+    // move the job to completedJobs if successful, or remove if error
+    conversionQueue.shift();
+    if (job.status === 'complete' && job.mp3Path) {
+      job.completedAt = Date.now();
+      completedJobs.push(job);
+      console.log(`[Queue]: Moved completed job ${job.id} to completed list. Total completed: ${completedJobs.length}`);
+    } else if (job.status === 'error') {
+      console.log(`[Queue]: Discarding errored job ${job.id} from queue.`);
+      // Optionally delete the original file for errored job
+      if (fs.existsSync(job.originalPath)) {
+        fs.unlink(job.originalPath, (err) => {
+          if (err) console.error(`[Cleanup]: Failed to delete original file ${job.originalPath}:`, err);
+          else console.log(`[Cleanup]: Deleted original file ${job.originalPath} for errored job ${job.id}`);
+        });
+      }
+    }
     isProcessing = false;
-    // Check if there's another PENDING job immediately following
-    if (conversionQueue.length > 1 && conversionQueue[1].status === 'pending') {
-       // If the next job is pending, trigger processing immediately for it
-       processQueue();
+    broadcastQueueStatus(); // Update clients about the new queue state
+    console.log(`[Queue]: Removed job ${job.id} from active queue. Queue length now: ${conversionQueue.length}`);
+    
+    // Clean up old completed jobs
+    cleanupCompletedJobs();
+    
+    // Check if there are more jobs to process
+    if (conversionQueue.length > 0) {
+        console.log(`[Queue]: More jobs waiting (${conversionQueue.length}), triggering next process cycle.`);
+        processQueue();
+    } else {
+        console.log('[Queue]: No more jobs in queue.');
     }
-    /* COMMENTING OUT THIS BLOCK TO PREVENT IMMEDIATE REMOVAL
-    else if (conversionQueue.length > 0 && conversionQueue[0].status !== 'pending') {\n        // If the current job (index 0) finished but wasn't removed,\n        // and there are no more pending jobs right after, we need to remove it\n        // to allow processing to continue if more jobs are added later.\n        // Or have a separate mechanism to clean up completed jobs.\n        // Let's shift here for simplicity IF the job is done.\n        if (job.status === 'complete' || job.status === 'error') {\n            conversionQueue.shift(); // Remove the completed/errored job\n            processQueue(); // Check again if the NEW head of queue is ready\n        }\n      }\n    */
-    else if (conversionQueue.length === 0) {
-       // Queue is now empty, do nothing until a new job is added.
-    }
-     // If the queue only has the current completed/errored job,
-     // and we don't shift it, processing stops until a new job arrives.
-     // Shifting it above handles this.
   }
 };
 
@@ -288,7 +322,7 @@ app.post('/upload', upload.single('video'), async (req, res) => {
 app.get('/download/:jobId', (req: Request, res: Response) => {
   const jobId = req.params.jobId;
   // Find the job in memory (NOTE: In a real app, use a database)
-  const job = conversionQueue.find(j => j.id === jobId);
+  const job = [...conversionQueue, ...completedJobs].find(j => j.id === jobId);
   
   // In a more robust system, you might also check completed jobs persisted elsewhere
   // For this example, we only check the current queue state.
@@ -329,8 +363,20 @@ app.get('/download/:jobId', (req: Request, res: Response) => {
       }
     } else {
        console.log(`[Download]: Successfully sent file for job ${jobId}`);
-       // Optionally, clean up the job or file after download?
-       // For now, allow multiple downloads.
+       // Remove the job from completedJobs after successful download
+       const index = completedJobs.findIndex(j => j.id === jobId);
+       if (index !== -1) {
+         completedJobs.splice(index, 1);
+         console.log(`[Queue]: Removed downloaded job ${jobId} from completed list. Remaining: ${completedJobs.length}`);
+         broadcastQueueStatus();
+         // Optionally, delete the output file after download
+         if (job.mp3Path && fs.existsSync(job.mp3Path)) {
+           fs.unlink(job.mp3Path, (err) => {
+             if (err) console.error(`[Cleanup]: Failed to delete file ${job.mp3Path}:`, err);
+             else console.log(`[Cleanup]: Deleted file ${job.mp3Path} for downloaded job ${jobId}`);
+           });
+         }
+       }
     }
   });
 });
@@ -342,7 +388,12 @@ app.get('/queue-status', (req: Request, res: Response) => {
     filename: job.originalFilename, 
     status: job.status 
   }));
-  res.json({ queue: queueStatus });
+  const completedStatus = completedJobs.map(job => ({ 
+    id: job.id, 
+    filename: job.originalFilename, 
+    status: job.status 
+  }));
+  res.json({ queue: [...queueStatus, ...completedStatus] });
 });
 
 // Start the server
