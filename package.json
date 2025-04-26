@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "build:dev": "docker compose -f docker-compose.yml -f docker-compose.override.yml up --build",
+    "build:dev-frontend": "docker compose -f docker-compose.yml -f docker-compose.override.yml build frontend",
+    "build:dev-backend": "docker compose -f docker-compose.yml -f docker-compose.override.yml build backend",
     "start:dev": "docker compose -f docker-compose.yml -f docker-compose.override.yml up",
     "stop:dev": "docker compose -f docker-compose.yml -f docker-compose.override.yml down -v",
     "build:prod": "docker compose -f docker-compose.yml up --build -d",
