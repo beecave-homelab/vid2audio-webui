@@ -1,0 +1,22 @@
+# Use an official Node runtime as a parent image
+FROM node:20-slim
+
+# Install ffmpeg first
+RUN apt-get update && apt-get install -y ffmpeg --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src/app
+
+# Install app dependencies
+# Copy package.json and package-lock.json first to leverage Docker cache
+COPY backend/package*.json ./
+RUN npm install
+
+# Copy the rest of the backend code (will be overwritten by volume mount in dev)
+COPY backend/ ./backend/
+
+# Make port 3001 available
+EXPOSE 3001
+
+# Run the app in development mode with hot-reloading
+CMD ["npm", "run", "dev"] 

@@ -1,0 +1,9 @@
+node_modules
+.cursor/rules/**
+backend/node_modules
+frontend/node_modules
+backend/uploads/*.mp4
+backend/public/uploads/*.mp4
+backend/outputs/*.mp3
+backend/public/outputs/*.mp3
+

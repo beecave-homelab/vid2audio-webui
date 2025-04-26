@@ -1,0 +1,17 @@
+# Use an official Node runtime as a parent image
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install app dependencies
+COPY frontend/package*.json ./
+RUN npm install
+
+# Copy the rest of the frontend code (will be overwritten by volume mount in dev)
+COPY frontend/ ./frontend/
+
+# Make port 3000 available
+EXPOSE 3000
+
+# Run the app using react-scripts start
+CMD ["npm", "start"] 

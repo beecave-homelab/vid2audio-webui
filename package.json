@@ -1,0 +1,20 @@
+{
+  "name": "vid2audio-webui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:dev": "docker compose -f docker-compose.yml -f docker-compose.override.yml up --build",
+    "start:dev": "docker compose -f docker-compose.yml -f docker-compose.override.yml up",
+    "stop:dev": "docker compose -f docker-compose.yml -f docker-compose.override.yml down -v",
+    "build:prod": "docker compose -f docker-compose.yml up --build -d",
+    "start:prod": "docker compose -f docker-compose.yml up -d",
+    "stop:prod": "docker compose -f docker-compose.yml down -v"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "devDependencies": {
+    "@types/uuid": "^10.0.0"
+  }
+}
