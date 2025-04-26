@@ -16,9 +16,10 @@ interface JobProgress {
 }
 
 // Simple component for the file uploader
-function VideoUploader() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+function VideoUploader(): React.ReactElement {
+  const [selectedFiles, setSelectedFiles] = useState<File[] | null>(null);
   const [videoSrc, setVideoSrc] = useState<string | null>(null); // State for video preview URL
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<number, string>>({}); // Store thumbnails by file index
   const [uploading, setUploading] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('');
   const [queue, setQueue] = useState<QueueJob[]>([]);
@@ -30,6 +31,9 @@ function VideoUploader() {
 
   // Ref for the video element
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Add a state and function to handle full video playback on demand
+  const [isPlayingFullVideo, setIsPlayingFullVideo] = useState<boolean>(false);
 
   // Effect to setup WebSocket connection and polling fallback
   useEffect(() => {
@@ -62,7 +66,7 @@ function VideoUploader() {
 
       socket.onclose = () => {
         console.log('WebSocket Disconnected');
-        setMessage('Disconnected from server. Please refresh.');
+        setMessage('Disconnected from server. Attempting to reconnect...');
         // Start polling as fallback if WebSocket closes
         if (!pollingInterval) {
           console.log('Starting polling fallback due to WebSocket disconnection.');
@@ -72,63 +76,122 @@ function VideoUploader() {
         if (ws.current === socket) {
           ws.current = null;
         }
-      };
+        // Attempt to reconnect after a delay
+        setTimeout(() => {
+          if (!ws.current) {
+            console.log('Attempting WebSocket reconnection...');
+            const newSocket = new WebSocket(wsUrl);
+            // Reattach event listeners for the new socket using previously defined handlers
+            newSocket.onopen = () => {
+              console.log('WebSocket Connected');
+              setMessage('Connected to server.');
+              // Stop polling if it was started
+              if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                console.log('WebSocket connected, stopping polling fallback.');
+              }
+            };
+            newSocket.onclose = () => {
+              console.log('WebSocket Disconnected');
+              setMessage('Disconnected from server. Attempting to reconnect...');
+              // Start polling as fallback if WebSocket closes
+              if (!pollingInterval) {
+                console.log('Starting polling fallback due to WebSocket disconnection.');
+                pollingInterval = setInterval(fetchQueueStatus, 5000); // Poll every 5 seconds
+              }
+              // Clear the ref ONLY if it currently holds this specific socket instance
+              if (ws.current === newSocket) {
+                ws.current = null;
+              }
+              // Attempt to reconnect after a delay
+              setTimeout(() => {
+                if (!ws.current) {
+                  console.log('Attempting WebSocket reconnection...');
+                  const newerSocket = new WebSocket(wsUrl);
+                  // Reattach event listeners for the newer socket
+                  newerSocket.onopen = newSocket.onopen;
+                  newerSocket.onclose = newSocket.onclose;
+                  newerSocket.onerror = newSocket.onerror;
+                  newerSocket.onmessage = newSocket.onmessage;
+                  ws.current = newerSocket;
+                }
+              }, 5000); // Wait 5 seconds before attempting reconnection
+            };
+            newSocket.onerror = (error) => {
+              console.error('WebSocket Error:', error);
+              setMessage('WebSocket connection error.');
+              // Start polling as fallback if WebSocket errors
+              if (!pollingInterval) {
+                console.log('Starting polling fallback due to WebSocket error.');
+                pollingInterval = setInterval(fetchQueueStatus, 5000); // Poll every 5 seconds
+              }
+              // Clear the ref ONLY if it currently holds this specific socket instance
+              if (ws.current === newSocket) {
+                ws.current = null;
+              }
+              // Attempt to reconnect after a delay
+              setTimeout(() => {
+                if (!ws.current) {
+                  console.log('Attempting WebSocket reconnection after error...');
+                  const newerSocket = new WebSocket(wsUrl);
+                  // Reattach event listeners for the newer socket
+                  newerSocket.onopen = newSocket.onopen;
+                  newerSocket.onclose = newSocket.onclose;
+                  newerSocket.onerror = newSocket.onerror;
+                  newerSocket.onmessage = newSocket.onmessage;
+                  ws.current = newerSocket;
+                }
+              }, 5000); // Wait 5 seconds before attempting reconnection
+            };
+            newSocket.onmessage = (event) => {
+              console.log('Debug: Raw WebSocket message received:', event.data);
+              try {
+                const data = JSON.parse(event.data);
+                console.log('WebSocket Message Received:', data);
 
-      socket.onerror = (error) => {
-        console.error('WebSocket Error:', error);
-        setMessage('WebSocket connection error.');
-        // Start polling as fallback if WebSocket errors
-        if (!pollingInterval) {
-          console.log('Starting polling fallback due to WebSocket error.');
-          pollingInterval = setInterval(fetchQueueStatus, 5000); // Poll every 5 seconds
-        }
-        // Clear the ref ONLY if it currently holds this specific socket instance
-        if (ws.current === socket) {
-          ws.current = null;
-        }
-      };
-
-      socket.onmessage = (event) => {
-        console.log('Debug: Raw WebSocket message received:', event.data);
-        try {
-          const data = JSON.parse(event.data);
-          console.log('WebSocket Message Received:', data);
-
-          switch (data.type) {
-            case 'connection':
-              setMessage(data.message);
-              break;
-            case 'queue_update':
-              // Log the received queue data
-              console.log('[WebSocket][queue_update]: Received queue data:', data.queue);
-              console.log('[WebSocket][queue_update]: Updating state with new queue.');
-              setQueue(data.queue);
-              break;
-            case 'job_progress':
-              console.log('[WebSocket][job_progress]: Updating progress for job', data.jobId, 'to', data.progress);
-              setProgress((prev) => ({ ...prev, [data.jobId]: data }));
-              break;
-            case 'job_complete':
-            case 'job_error':
-              console.log(`[WebSocket][job_complete/error]: Received for job ${data.jobId}. Removing progress.`);
-              // Remove progress when job finishes or errors
-              setProgress((prev) => {
-                const newProgress = { ...prev };
-                delete newProgress[data.jobId];
-                return newProgress;
-              });
-              // Queue update will refresh status separately
-              break;
-            // Handle other message types (upload_success, etc.) if needed
-            default:
-              console.log('Unknown message type:', data.type);
+                switch (data.type) {
+                  case 'connection':
+                    setMessage(data.message);
+                    break;
+                  case 'queue_update':
+                    // Log the received queue data
+                    console.log('[WebSocket][queue_update]: Received queue data:', data.queue);
+                    console.log('[WebSocket][queue_update]: Updating state with new queue.');
+                    setQueue(data.queue);
+                    break;
+                  case 'job_progress':
+                    console.log(
+                      '[WebSocket][job_progress]: Updating progress for job',
+                      data.jobId,
+                      'to',
+                      data.progress,
+                    );
+                    setProgress((prev) => ({ ...prev, [data.jobId]: data }));
+                    break;
+                  case 'job_complete':
+                  case 'job_error':
+                    console.log(`[WebSocket][job_complete/error]: Received for job ${data.jobId}. Removing progress.`);
+                    // Remove progress when job finishes or errors
+                    setProgress((prev) => {
+                      const newProgress = { ...prev };
+                      delete newProgress[data.jobId];
+                      return newProgress;
+                    });
+                    // Queue update will refresh status separately
+                    break;
+                  // Handle other message types (upload_success, etc.) if needed
+                  default:
+                    console.log('Unknown message type:', data.type);
+                }
+              } catch (error) {
+                console.error('Error parsing WebSocket message:', error);
+              }
+            };
+            ws.current = newSocket;
           }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-        }
+        }, 5000); // Wait 5 seconds before attempting reconnection
       };
-      // --- Now assign to ref ---
-      ws.current = socket;
 
       // Start polling as a fallback if WebSocket doesn't connect within a timeout
       pollingInterval = setTimeout(() => {
@@ -193,20 +256,81 @@ function VideoUploader() {
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const files = event.target.files;
     resetTrimState(); // Reset trim times on new file selection
-    if (file) {
-      setSelectedFile(file);
+    if (files && files.length > 0) {
+      // Check maximum file count
+      if (files.length > 10) {
+        setMessage('You can upload a maximum of 10 files at a time.');
+        setSelectedFiles(null);
+        setVideoSrc(null);
+        setThumbnailUrls({});
+        return;
+      }
+      // Check total size limit (5 GB = 5 * 1024 * 1024 * 1024 bytes)
+      const totalSizeLimit = 5 * 1024 * 1024 * 1024;
+      let totalSize = 0;
+      const selectedFilesArray: File[] = Array.from(files);
+      for (const file of selectedFilesArray) {
+        totalSize += file.size;
+      }
+      if (totalSize > totalSizeLimit) {
+        setMessage('Total size of selected files exceeds 5 GB limit.');
+        setSelectedFiles(null);
+        setVideoSrc(null);
+        setThumbnailUrls({});
+        return;
+      }
+      setSelectedFiles(selectedFilesArray);
       setMessage('');
-      // Create object URL for preview
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setVideoSrc(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      // Create thumbnails for all selected files
+      const newThumbnailUrls: Record<number, string> = {};
+      selectedFilesArray.forEach((file, index) => {
+        // Create a temporary URL for the video to load it for thumbnail generation
+        const tempUrl = URL.createObjectURL(file);
+        // Use a video element to load the file and capture a frame as thumbnail
+        const video = document.createElement('video');
+        video.src = tempUrl;
+        video.crossOrigin = 'Anonymous';
+        video.preload = 'metadata';
+        video.onloadeddata = () => {
+          // Seek to the first frame or a specific time (e.g., 1 second) for thumbnail
+          video.currentTime = 1;
+        };
+        video.onseeked = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const thumbnailUrl = canvas.toDataURL('image/png');
+            newThumbnailUrls[index] = thumbnailUrl;
+            // Update state with the new thumbnails
+            setThumbnailUrls((prevUrls) => ({
+              ...prevUrls,
+              ...newThumbnailUrls,
+            }));
+            // Set videoSrc to the first thumbnail if not set
+            if (index === 0) {
+              setVideoSrc(thumbnailUrl); // Set first thumbnail as primary preview
+            }
+          }
+          // Clean up: revoke the temporary URL and remove the video element
+          URL.revokeObjectURL(tempUrl);
+          video.remove();
+        };
+        video.onerror = () => {
+          setMessage(`Error loading video for thumbnail of ${file.name}.`);
+          URL.revokeObjectURL(tempUrl);
+          video.remove();
+        };
+      });
     } else {
-      setSelectedFile(null);
-      setVideoSrc(null); // Clear preview
+      setSelectedFiles(null);
+      setVideoSrc(null);
+      setThumbnailUrls({});
+      setMessage('No file selected.');
     }
   };
 
@@ -228,7 +352,7 @@ function VideoUploader() {
       // Initialize endTime only if it hasn't been set or is 0
       // This prevents resetting if the user changes the file after setting trim times
       if (endTime === 0 || endTime > videoDuration) {
-        setEndTime(videoDuration);
+        setEndTime(videoDuration); // Set to exact duration without rounding
       }
       // Reset start time only if it's beyond the new duration
       if (startTime >= videoDuration) {
@@ -270,46 +394,61 @@ function VideoUploader() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedFile) {
-      setMessage('Please select a video file first.');
+    if (!selectedFiles || selectedFiles.length === 0) {
+      setMessage('Please select at least one video file first.');
       return;
     }
     setUploading(true);
-    setMessage(`Uploading ${selectedFile.name}...`);
-    const formData = new FormData();
-    formData.append('video', selectedFile);
-    if (startTime !== 0 || endTime !== duration) {
-      formData.append('startTime', startTime.toString());
-      formData.append('endTime', endTime.toString());
-      console.log(`Appending trim times: start=${startTime}, end=${endTime}`);
+    setMessage(`Uploading ${selectedFiles.length} file(s)...`);
+    // Process each file individually
+    for (const file of selectedFiles) {
+      const formData = new FormData();
+      formData.append('video', file);
+      if (startTime !== 0 || endTime !== duration) {
+        formData.append('startTime', startTime.toString());
+        formData.append('endTime', endTime.toString());
+        console.log(`Appending trim times for ${file.name}: start=${startTime}, end=${endTime}`);
+      }
+      try {
+        // Use relative path which will be proxied by CRA dev server
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        const result = await response.json();
+        if (response.ok && response.status === 202) {
+          // Check for 202 Accepted
+          setMessage(`Upload queued for ${file.name}! Job ID: ${result.jobId}.`);
+          console.log('Upload queued:', result);
+        } else {
+          // Handle immediate errors from server before queueing
+          setMessage(`Upload failed for ${file.name}: ${result.message || response.statusText || 'Server error'}`);
+        }
+      } catch (error) {
+        console.error(`Upload error for ${file.name}:`, error);
+        setMessage(`Upload error for ${file.name}: ${error instanceof Error ? error.message : 'Network error'}`);
+      }
     }
-    try {
-      // Use relative path which will be proxied by CRA dev server
-      const response = await fetch('/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      const result = await response.json();
-      if (response.ok && response.status === 202) {
-        // Check for 202 Accepted
-        setMessage(`Upload queued! Job ID: ${result.jobId}.`);
-        console.log('Upload queued:', result);
-      } else {
-        // Handle immediate errors from server before queueing
-        setMessage(`Upload failed: ${result.message || response.statusText || 'Server error'}`);
+    setUploading(false);
+    setSelectedFiles(null);
+    // Reset file input visually
+    if (event.target instanceof HTMLFormElement) {
+      event.target.reset();
+    }
+    resetTrimState(); // Reset trim state after upload attempt
+    setVideoSrc(null);
+  };
+
+  // Add a function to handle full video playback on demand
+  const handlePlayFullVideo = (file: File, index: number) => {
+    if (!isPlayingFullVideo) {
+      const fullVideoUrl = URL.createObjectURL(file);
+      setVideoSrc(fullVideoUrl);
+      setIsPlayingFullVideo(true);
+      // Optionally, play the video if videoRef is available
+      if (videoRef.current) {
+        videoRef.current.play();
       }
-    } catch (error) {
-      console.error('Upload error:', error);
-      setMessage(`Upload error: ${error instanceof Error ? error.message : 'Network error'}`);
-    } finally {
-      setUploading(false);
-      setSelectedFile(null);
-      // Reset file input visually
-      if (event.target instanceof HTMLFormElement) {
-        event.target.reset();
-      }
-      resetTrimState(); // Reset trim state after upload attempt
-      setVideoSrc(null);
     }
   };
 
@@ -317,81 +456,118 @@ function VideoUploader() {
     <div className="video-uploader">
       <h2>Upload Video for MP3 Conversion</h2>
       <form onSubmit={handleSubmit}>
-        <input type="file" accept="video/*" onChange={handleFileChange} disabled={uploading} />
-        {/* Conditionally display video preview */}
+        <div className="file-input-container">
+          <input
+            type="file"
+            id="videoFile"
+            accept="video/*"
+            onChange={handleFileChange}
+            className="file-input"
+            multiple
+          />
+          <label htmlFor="videoFile" className="file-input-label">
+            {selectedFiles && selectedFiles.length > 0
+              ? `${selectedFiles.length} file(s) selected`
+              : 'Choose video files (up to 10, max 5GB total)'}
+          </label>
+        </div>
         {videoSrc && (
-          <div className="video-preview">
-            <h3>Preview:</h3>
-            <video ref={videoRef} controls width="320" src={videoSrc} onLoadedMetadata={handleMetadataLoaded}></video>
-            {/* Display Duration */}
+          <div className="video-preview-container">
+            {!isPlayingFullVideo ? (
+              <div className="thumbnail-container">
+                {selectedFiles &&
+                  selectedFiles.length > 0 &&
+                  selectedFiles.map((file, index) => (
+                    <div key={index} className="thumbnail-item">
+                      {thumbnailUrls[index] ? (
+                        <img
+                          src={thumbnailUrls[index]}
+                          alt={`Thumbnail for ${file.name}`}
+                          className="video-thumbnail"
+                          onError={() => setMessage(`Error loading thumbnail for ${file.name}`)}
+                        />
+                      ) : (
+                        <div className="thumbnail-placeholder">Generating thumbnail...</div>
+                      )}
+                      <div className="thumbnail-filename">{file.name}</div>
+                      <button type="button" onClick={() => handlePlayFullVideo(file, index)} className="play-button">
+                        Play & Trim Video
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <video
+                ref={videoRef}
+                src={videoSrc}
+                controls
+                className="video-preview"
+                onLoadedMetadata={handleMetadataLoaded}
+              />
+            )}
             {duration > 0 && (
               <div className="trim-controls">
-                <h4>Trim Video:</h4>
-                <p>Total Duration: {formatTime(duration)}</p>
-                {/* Start Time Controls */}
-                <div className="control-group">
-                  <label htmlFor="startTime">Start:</label>
-                  <input
-                    type="range"
-                    id="startTimeRange"
-                    name="startTimeRange"
-                    min="0"
-                    max={duration}
-                    step="0.01"
-                    value={startTime}
-                    onChange={handleStartTimeChange}
-                  />
-                  <input
-                    type="number"
-                    id="startTime"
-                    name="startTime"
-                    min="0"
-                    max={duration}
-                    step="0.01"
-                    value={startTime.toFixed(2)}
-                    onChange={handleStartTimeChange}
-                  />
-                  <span>{formatTime(startTime)}</span>
+                <div className="time-info">
+                  <span>Total Duration: {formatTime(duration)}</span>
+                  <span>Selected Duration: {formatTime(endTime - startTime)}</span>
                 </div>
-                {/* End Time Controls */}
-                <div className="control-group">
-                  <label htmlFor="endTime">End:</label>
-                  <input
-                    type="range"
-                    id="endTimeRange"
-                    name="endTimeRange"
-                    min="0"
-                    max={duration}
-                    step="0.01"
-                    value={endTime}
-                    onChange={handleEndTimeChange}
-                  />
-                  <input
-                    type="number"
-                    id="endTime"
-                    name="endTime"
-                    min="0"
-                    max={duration}
-                    step="0.01"
-                    value={endTime.toFixed(2)}
-                    onChange={handleEndTimeChange}
-                  />
-                  <span>{formatTime(endTime)}</span>
+                <div className="dual-slider-container">
+                  <div className="time-labels">
+                    <span className="time-label start-label">Start Time (s)</span>
+                    <span className="time-label end-label">End Time (s)</span>
+                  </div>
+                  <div className="dual-slider">
+                    <input
+                      type="range"
+                      min={0}
+                      max={duration}
+                      step={0.0001}
+                      value={startTime}
+                      onChange={handleStartTimeChange}
+                      className="time-slider start-slider"
+                    />
+                    <input
+                      type="range"
+                      min={0}
+                      max={duration}
+                      step={0.0001}
+                      value={endTime}
+                      onChange={handleEndTimeChange}
+                      className="time-slider end-slider"
+                    />
+                  </div>
+                  <div className="time-inputs-below">
+                    <input
+                      type="number"
+                      min={0}
+                      max={endTime}
+                      step={0.0001}
+                      value={startTime.toFixed(4)}
+                      onChange={handleStartTimeChange}
+                      className="time-input start-input"
+                    />
+                    <input
+                      type="number"
+                      min={startTime}
+                      max={duration}
+                      step={0.0001}
+                      value={endTime.toFixed(4)}
+                      onChange={handleEndTimeChange}
+                      className="time-input end-input"
+                    />
+                  </div>
                 </div>
-                {/* Display Selected Duration */}
-                <p>Selected Duration: {formatTime(endTime - startTime)}</p>
               </div>
             )}
-            {/* TODO: Add trim controls UI (sliders, number inputs) here */}
           </div>
         )}
-        <button type="submit" disabled={!selectedFile || uploading}>
+        <button type="submit" disabled={!selectedFiles || selectedFiles.length === 0 || uploading}>
           {/* Use a more descriptive button text now */}
           {uploading
             ? 'Uploading...'
             : startTime !== 0 || endTime !== duration
               ? 'Trim & Convert'
-              : 'Convert Full Video'}
+              : 'Convert Full Video(s)'}
         </button>
       </form>
       {message && <p className="message">{message}</p>}
