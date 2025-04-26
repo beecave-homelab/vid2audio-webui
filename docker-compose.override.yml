@@ -17,8 +17,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.75'
-          memory: 800M
+          cpus: '1'
+          memory: 1000M
     # The CMD ["npm", "start"] is already in Dockerfile.frontend.dev
 
   backend:
@@ -37,8 +37,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1'
-          memory: 1200M
+          cpus: '2'
+          memory: 2000M
     # The CMD ["npm", "run", "dev"] is already in Dockerfile.backend.dev
 
 # Networks are inherited from the base docker-compose.yml 
