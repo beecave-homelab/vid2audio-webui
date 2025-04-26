@@ -135,8 +135,8 @@ const broadcastQueueStatus = () => {
 // Function to clean up old completed jobs
 const cleanupCompletedJobs = () => {
   const now = Date.now();
-  // Remove jobs older than 24 hours
-  const retentionPeriod = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+  // Remove jobs older than 10 minutes
+  const retentionPeriod = 10 * 60 * 1000; // 10 minutes in milliseconds
   while (completedJobs.length > 0 && now - (completedJobs[0].completedAt || 0) > retentionPeriod) {
     const oldJob = completedJobs.shift();
     console.log(`[Queue]: Removed old completed job ${oldJob?.id} from completed list.`);
@@ -210,8 +210,13 @@ const processQueue = async () => {
     broadcast({ type: 'job_complete', jobId: job.id, filename: job.originalFilename, mp3Filename: path.basename(mp3Path) });
     console.log(`[Queue]: Broadcasted job_complete for job ${job.id}.`);
 
-    // Optionally, delete the original uploaded file after successful conversion
-    // fs.unlink(job.originalPath, (err) => { ... });
+    // Delete the original uploaded file after successful conversion
+    if (fs.existsSync(job.originalPath)) {
+      fs.unlink(job.originalPath, (err) => {
+        if (err) console.error(`[Cleanup]: Failed to delete original file ${job.originalPath}:`, err);
+        else console.log(`[Cleanup]: Deleted original file ${job.originalPath} for completed job ${job.id}`);
+      });
+    }
 
   } catch (error: any) {
     console.error(`[Queue]: Job ${job.id} failed for ${job.originalFilename}:`, error);
