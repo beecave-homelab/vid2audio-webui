@@ -7,6 +7,11 @@ services:
       - "3002:80" # Map host port 3002 to container port 80 (Nginx default)
     networks:
       - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 800M
 
   backend:
     build:
@@ -18,6 +23,11 @@ services:
       NODE_ENV: production # Set environment to production
     networks:
       - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1200M
 
 networks:
   app-network:
