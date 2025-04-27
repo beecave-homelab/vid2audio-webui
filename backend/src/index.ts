@@ -106,11 +106,13 @@ interface ConversionJob {
   originalPath: string;
   originalFilename: string;
   options: ConversionOptions;
-  status: 'pending' | 'processing' | 'complete' | 'error';
+  status: 'uploading' | 'uploaded' | 'processing' | 'complete' | 'error';
   mp3Path?: string;
   error?: string;
   ws?: WebSocket; // Optionally associate with the submitting client
   completedAt?: number; // Timestamp when job was completed
+  uploadProgress?: number; // Percentage of upload completed
+  conversionProgress?: number; // Percentage of conversion completed
 }
 
 const conversionQueue: ConversionJob[] = [];
@@ -122,12 +124,16 @@ const broadcastQueueStatus = () => {
   const queueStatus = conversionQueue.map(job => ({ 
     id: job.id, 
     filename: job.originalFilename, 
-    status: job.status 
+    status: job.status,
+    uploadProgress: job.uploadProgress || 0,
+    conversionProgress: job.conversionProgress || 0
   }));
   const completedStatus = completedJobs.map(job => ({ 
     id: job.id, 
     filename: job.originalFilename, 
-    status: job.status 
+    status: job.status,
+    uploadProgress: job.uploadProgress || 0,
+    conversionProgress: job.conversionProgress || 0
   }));
   broadcast({ type: 'queue_update', queue: [...queueStatus, ...completedStatus] });
 };
@@ -145,6 +151,13 @@ const cleanupCompletedJobs = () => {
       fs.unlink(oldJob.mp3Path, (err) => {
         if (err) console.error(`[Cleanup]: Failed to delete file ${oldJob.mp3Path}:`, err);
         else console.log(`[Cleanup]: Deleted file ${oldJob.mp3Path} for old job ${oldJob.id}`);
+      });
+    }
+    // Also delete the original uploaded file for errored jobs if it exists
+    if (oldJob && oldJob.status === 'error' && oldJob.originalPath && fs.existsSync(oldJob.originalPath)) {
+      fs.unlink(oldJob.originalPath, (err) => {
+        if (err) console.error(`[Cleanup]: Failed to delete original file ${oldJob.originalPath}:`, err);
+        else console.log(`[Cleanup]: Deleted original file ${oldJob.originalPath} for old errored job ${oldJob.id}`);
       });
     }
   }
@@ -167,11 +180,9 @@ const processQueue = async () => {
   }
 
   // Only proceed if the job is actually pending
-  if (job.status !== 'pending') {
-    console.warn(`[Queue]: Attempted to process job ${job.id} which is not pending (status: ${job.status}). Skipping.`);
-    // Remove the non-pending job from the front if needed, or handle differently.
-    // For now, just stop processing this cycle and let the next trigger handle it.
-    // We might need a mechanism to remove stale/unexpected jobs.
+  if (job.status !== 'uploaded') {
+    console.warn(`[Queue]: Attempted to process job ${job.id} which is not uploaded (status: ${job.status}). Skipping.`);
+    // Remove the non-uploaded job from the front if needed, or handle differently.
     conversionQueue.shift(); // Remove the unexpected job from the front
     isProcessing = false;
     processQueue(); // Try processing the next one
@@ -186,12 +197,8 @@ const processQueue = async () => {
     // Define the progress handler for this job
     const progressHandler: ProgressCallback = (progress) => {
       console.log(`[Progress] Job ${job.id}: ${progress.percent}%`);
-      broadcast({ 
-        type: 'job_progress', 
-        jobId: job.id, 
-        filename: job.originalFilename,
-        progress: progress.percent 
-      });
+      job.conversionProgress = progress.percent;
+      broadcastQueueStatus();
     };
 
     // Perform the conversion, passing the progress handler
@@ -238,6 +245,8 @@ const processQueue = async () => {
       job.completedAt = Date.now();
       completedJobs.push(job);
       console.log(`[Queue]: Moved errored job ${job.id} to completed list. Total completed: ${completedJobs.length}`);
+      // Deletion of original file for errored job will be handled by cleanupCompletedJobs after timeout
+      /*
       // Optionally delete the original file for errored job
       if (fs.existsSync(job.originalPath)) {
         fs.unlink(job.originalPath, (err) => {
@@ -245,6 +254,7 @@ const processQueue = async () => {
           else console.log(`[Cleanup]: Deleted original file ${job.originalPath} for errored job ${job.id}`);
         });
       }
+      */
     }
     isProcessing = false;
     broadcastQueueStatus(); // Update clients about the new queue state
@@ -269,60 +279,47 @@ app.get('/', (req, res) => {
 });
 
 // Endpoint for file upload
-app.post('/upload', upload.single('video'), async (req, res) => {
+app.post('/upload', upload.single('video'), async (req: Request, res: Response) => {
   if (!req.file) {
-    return res.status(400).send('No file uploaded.');
-  }
-  console.log('File uploaded successfully:', req.file.path);
-  broadcast({ type: 'upload_success', filename: req.file.originalname });
-
-  // Get startTime and endTime from req.body (sent as strings)
-  const { startTime: startTimeStr, endTime: endTimeStr } = req.body;
-  const conversionOptions: ConversionOptions = {};
-
-  // Parse and validate trim times
-  const startTime = parseFloat(startTimeStr);
-  const endTime = parseFloat(endTimeStr);
-
-  if (!isNaN(startTime) && startTime >= 0) {
-    conversionOptions.startTime = startTime;
-    console.log(`Using startTime: ${startTime}`);
-  }
-  if (!isNaN(endTime) && endTime > 0 && (isNaN(startTime) || endTime > startTime)) {
-    conversionOptions.endTime = endTime;
-     console.log(`Using endTime: ${endTime}`);
-  } else if (!isNaN(endTime)) {
-     console.warn(`Invalid endTime (${endTime}) received, ignoring.`);
+    return res.status(400).json({ message: 'No file uploaded' });
   }
 
-  // Create a new job
   const jobId = uuidv4();
-  const newJob: ConversionJob = {
+  const job: ConversionJob = {
     id: jobId,
     originalPath: req.file.path,
     originalFilename: req.file.originalname,
-    options: conversionOptions,
-    status: 'pending'
-    // TODO: Associate ws client if needed for direct feedback?
+    options: {},
+    status: 'uploading',
+    uploadProgress: 0,
+    conversionProgress: 0
   };
 
-  // Add job to the queue
-  conversionQueue.push(newJob);
-  console.log(`[Queue]: Job ${jobId} added for ${newJob.originalFilename}`);
-  broadcastQueueStatus();
+  // Simulate upload progress for demonstration; in a real scenario, this would be based on actual upload progress
+  let uploadProgress = 0;
+  const uploadInterval = setInterval(() => {
+    uploadProgress += 10;
+    if (uploadProgress > 100) uploadProgress = 100;
+    job.uploadProgress = uploadProgress;
+    broadcastQueueStatus();
+    if (uploadProgress >= 100) {
+      clearInterval(uploadInterval);
+      job.status = 'uploaded';
+      broadcastQueueStatus();
+      // Parse trimming options if provided
+      if (req.body.startTime) {
+        job.options.startTime = parseFloat(req.body.startTime);
+      }
+      if (req.body.endTime) {
+        job.options.endTime = parseFloat(req.body.endTime);
+      }
+      conversionQueue.push(job);
+      broadcastQueueStatus();
+      processQueue();
+    }
+  }, 500);
 
-  // Trigger processing if not already running
-  processQueue(); 
-
-  // Respond to the client immediately that the job is queued
-  res.status(202).json({ 
-    message: 'File uploaded and queued for conversion.',
-    jobId: jobId,
-    filename: newJob.originalFilename,
-    queuePosition: conversionQueue.length // Current position (1-based)
-  }); 
-
-  // Conversion logic moved to a separate processor function
+  res.status(202).json({ jobId });
 });
 
 // Endpoint for downloading completed files

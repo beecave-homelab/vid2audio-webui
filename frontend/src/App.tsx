@@ -5,7 +5,9 @@ import './App.css';
 interface QueueJob {
   id: string;
   filename: string;
-  status: 'pending' | 'processing' | 'complete' | 'error';
+  status: 'uploading' | 'uploaded' | 'processing' | 'complete' | 'error';
+  uploadProgress: number;
+  conversionProgress: number;
 }
 
 // Type for job progress
@@ -22,7 +24,6 @@ function VideoUploader() {
   const [uploading, setUploading] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('');
   const [queue, setQueue] = useState<QueueJob[]>([]);
-  const [progress, setProgress] = useState<Record<string, JobProgress>>({}); // Store progress by jobId
   const ws = useRef<WebSocket | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [startTime, setStartTime] = useState<number>(0);
@@ -171,18 +172,11 @@ function VideoUploader() {
                       'to',
                       data.progress,
                     );
-                    setProgress((prev) => ({ ...prev, [data.jobId]: data }));
                     break;
                   case 'job_complete':
                   case 'job_error':
                     console.log(`[WebSocket][job_complete/error]: Received for job ${data.jobId}. Removing progress.`);
                     // Remove progress when job finishes or errors
-                    setProgress((prev) => {
-                      const newProgress = { ...prev };
-                      delete newProgress[data.jobId];
-                      return newProgress;
-                    });
-                    // Queue update will refresh status separately
                     break;
                   // Handle other message types (upload_success, etc.) if needed
                   default:
@@ -529,32 +523,45 @@ function VideoUploader() {
         {queue.length === 0 ? (
           <p>Queue is empty.</p>
         ) : (
-          <ul>
-            {queue.map((job) => (
-              <li key={job.id}>
-                {job.filename} - {job.status}
-                {/* Display progress if processing */}
-                {job.status === 'processing' && progress[job.id] && (
-                  <span> ({progress[job.id].progress.toFixed(1)}%)</span>
-                )}
-                {/* Add download button for completed jobs */}
-                {job.status === 'complete' && (
-                  <a
-                    href={`/download/${job.id}`}
-                    download={`${job.filename.replace(/\.[^/.]+$/, '')}.mp3`}
-                    className="download-link"
-                  >
-                    Download MP3
-                  </a>
-                )}
-                {/* Display error message for failed jobs */}
-                {job.status === 'error' && (
-                  <span className="error-message"> (Conversion failed. The video may not contain a valid stream.)</span>
-                )}
-                {/* TODO: Add download button for completed jobs */}
-              </li>
-            ))}
-          </ul>
+          <table className="queue-table">
+            <thead>
+              <tr>
+                <th>Job ID</th>
+                <th>Filename</th>
+                <th>Status</th>
+                <th>Upload Progress</th>
+                <th>Conversion Progress</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {queue.map((job) => (
+                <tr key={job.id}>
+                  <td>{job.id.substring(0, 8)}...</td>
+                  <td>{job.filename}</td>
+                  <td>{job.status.charAt(0).toUpperCase() + job.status.slice(1)}</td>
+                  <td>{(job.uploadProgress || 0).toFixed(1)}%</td>
+                  <td>{(job.conversionProgress || 0).toFixed(1)}%</td>
+                  <td>
+                    {job.status === 'complete' && (
+                      <a
+                        href={`/download/${job.id}`}
+                        download={`${job.filename.replace(/\.[^/.]+$/, '')}.mp3`}
+                        className="download-link"
+                      >
+                        Download MP3
+                      </a>
+                    )}
+                    {job.status === 'error' && (
+                      <span className="error-message">
+                        Conversion failed. The video may not contain a valid stream.
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </div>
