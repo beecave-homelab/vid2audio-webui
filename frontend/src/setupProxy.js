@@ -14,7 +14,7 @@ module.exports = function (app) {
   app.use(
     '/app-ws', // Use a specific path for the application WebSocket
     createProxyMiddleware({
-      target: 'http://backend:3001', // Target the backend service
+      target: 'ws://backend:3001', // Target the backend service with ws:// protocol
       ws: true, // Enable WebSocket proxying
       changeOrigin: true, // Needed for virtual hosted sites, but good practice here
     }),

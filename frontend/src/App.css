@@ -238,20 +238,24 @@ button[type='submit']:disabled {
 }
 
 .download-link {
+  display: inline-block; /* Allow padding */
   background-color: var(--success-color);
-  color: white;
-  padding: 5px 10px;
+  color: white; /* Keep text white */
+  padding: 6px 12px;
   border-radius: 4px;
   text-decoration: none;
   font-size: 0.9rem;
+  border: none;
+  cursor: pointer;
   transition: background-color 0.2s ease;
 }
 
 .download-link:hover {
-  background-color: #388e3c; /* Darker success color */
+  background-color: #388e3c; /* Darker success color on hover */
+  text-decoration: none; /* Remove underline on hover */
 }
 
-/* Responsive Adjustments */
+/* Media Queries for Responsiveness */
 @media (max-width: 600px) {
   .App-header h1 {
     font-size: 1.5rem;
@@ -284,13 +288,19 @@ button[type='submit']:disabled {
   }
 }
 
-/* Remove default CRA styles we don't need */
+/* App Logo Animation */
 .App-logo {
-  display: none;
+  height: 40vmin;
+  pointer-events: none;
 }
 
 @keyframes App-logo-spin {
-  /* Keep empty or remove if not used */
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Styles for file input */
@@ -423,36 +433,50 @@ button[type='submit']:disabled {
   margin-top: 20px;
 }
 
-.queue-table th, .queue-table td {
-  border: 1px solid #ddd;
-  padding: 8px;
+.queue-table th,
+.queue-table td {
+  border: 1px solid var(--border-color); /* Use theme border color */
+  padding: 10px 12px; /* Slightly more padding */
   text-align: left;
+  color: var(--text-color); /* Use theme text color */
 }
 
 .queue-table th {
-  background-color: #f2f2f2;
+  background-color: var(--secondary-color); /* Use a theme background */
   font-weight: bold;
+  color: var(--primary-color); /* Highlight header text */
 }
 
-.queue-table tr:nth-child(even) {
+/* Remove light theme specific styles */
+/* .queue-table tr:nth-child(even) {
   background-color: #f9f9f9;
-}
+} */
 
-.queue-table tr:hover {
-  background-color: #f5f5f5;
-}
+/* Optional: Add subtle hover for dark theme if desired */
+/* .queue-table tr:hover {
+  background-color: #2c2c2c; 
+} */
 
+/* Style download link like a button */
 .download-link {
-  color: #007bff;
+  display: inline-block; /* Allow padding */
+  background-color: var(--success-color);
+  color: white; /* Keep text white */
+  padding: 6px 12px;
+  border-radius: 4px;
   text-decoration: none;
+  font-size: 0.9rem;
+  border: none;
   cursor: pointer;
+  transition: background-color 0.2s ease;
 }
 
 .download-link:hover {
-  text-decoration: underline;
+  background-color: #388e3c; /* Darker success color on hover */
+  text-decoration: none; /* Remove underline on hover */
 }
 
 .error-message {
-  color: #dc3545;
+  color: var(--error-color); /* Use theme error color */
   font-size: 0.9em;
 }

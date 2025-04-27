@@ -1,0 +1,84 @@
+/* QueueDisplay.css - Styles for the Queue Display component */
+
+.queue-status {
+  margin-top: 30px;
+  width: 100%;
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.queue-status h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.queue-status ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.queue-status li {
+  padding: 10px;
+  margin-bottom: 5px;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.queue-status li span {
+  font-family: monospace;
+}
+
+.queue-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+.queue-table th,
+.queue-table td {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.queue-table th {
+  background-color: var(--button-bg);
+  font-weight: bold;
+}
+
+.queue-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.queue-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.download-link {
+  color: var(--primary-color);
+  text-decoration: none;
+  transition: color 0.2s ease;
+  display: inline-block;
+  margin-top: 5px;
+  font-family: monospace;
+}
+
+.download-link:hover {
+  color: #4ca9c4;
+  text-decoration: underline;
+}
+
+.error-message {
+  color: var(--error-color);
+  margin-top: 5px;
+  font-size: 0.9rem;
+}

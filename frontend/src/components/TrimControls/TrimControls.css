@@ -1,0 +1,93 @@
+/* TrimControls.css - Styles for the Trim Controls component */
+
+.trim-controls {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: #2a2a2a;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 500px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.trim-controls h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap; /* Allow wrapping on smaller screens */
+}
+
+.control-group label {
+  min-width: 40px; /* Ensure label alignment */
+}
+
+.control-group input[type='range'] {
+  flex-grow: 1; /* Take remaining space */
+  cursor: pointer;
+}
+
+.control-group input[type='number'] {
+  width: 80px; /* Fixed width for number inputs */
+  padding: 5px;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.control-group span {
+  font-family: monospace; /* Better for time display */
+  min-width: 80px; /* Align with number input */
+  text-align: right;
+}
+
+.time-info {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.slider-container {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.time-slider {
+  width: 100%;
+}
+
+.time-inputs {
+  display: flex;
+  justify-content: space-between;
+}
+
+.time-inputs div {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.time-inputs label {
+  font-size: 0.9rem;
+  min-width: auto;
+}
+
+.time-input {
+  width: 60px;
+  padding: 3px;
+  font-size: 0.9rem;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-color);
+}

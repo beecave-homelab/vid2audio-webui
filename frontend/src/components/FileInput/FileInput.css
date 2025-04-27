@@ -1,0 +1,29 @@
+/* FileInput.css - Styles for the File Input component */
+
+.file-input-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.file-input {
+  display: none;
+}
+
+.file-input-label {
+  display: inline-block;
+  padding: 12px 24px;
+  background-color: var(--button-bg);
+  color: var(--text-color);
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: background-color 0.2s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.file-input-label:hover {
+  background-color: var(--button-hover-bg);
+}

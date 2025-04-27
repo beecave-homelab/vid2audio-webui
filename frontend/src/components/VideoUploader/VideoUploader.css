@@ -1,0 +1,50 @@
+/* VideoUploader.css - Styles for the VideoUploader component */
+
+.video-uploader {
+  display: flex;
+  flex-direction: column;
+  gap: 20px; /* Add spacing between elements */
+}
+
+.video-uploader h2 {
+  margin-top: 0;
+  text-align: center;
+  color: var(--text-color);
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  align-items: center; /* Center form elements */
+}
+
+button[type='submit'] {
+  background-color: var(--primary-color);
+  color: var(--bg-color);
+  border: none;
+  padding: 12px 25px;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+button[type='submit']:hover:not(:disabled) {
+  background-color: #4ca9c4; /* Darker shade of primary */
+}
+
+button[type='submit']:disabled {
+  background-color: var(--button-bg);
+  color: #888;
+  cursor: not-allowed;
+}
+
+.message {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+} 
