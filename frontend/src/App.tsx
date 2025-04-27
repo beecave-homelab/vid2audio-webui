@@ -16,10 +16,9 @@ interface JobProgress {
 }
 
 // Simple component for the file uploader
-function VideoUploader(): React.ReactElement {
-  const [selectedFiles, setSelectedFiles] = useState<File[] | null>(null);
+function VideoUploader() {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [videoSrc, setVideoSrc] = useState<string | null>(null); // State for video preview URL
-  const [thumbnailUrls, setThumbnailUrls] = useState<Record<number, string>>({}); // Store thumbnails by file index
   const [uploading, setUploading] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('');
   const [queue, setQueue] = useState<QueueJob[]>([]);
@@ -46,8 +45,8 @@ function VideoUploader(): React.ReactElement {
     if (!ws.current) {
       // Determine WebSocket URL (ws:// or wss://)
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      // Connect to the specific IP and port of the remote machine (will be proxied by setupProxy.js)
-      const wsUrl = `${wsProto}//192.168.2.95:3000/app-ws`; // Use specific IP and port for remote access
+      // Connect to the proxy path which will be forwarded to the backend
+      const wsUrl = `${wsProto}//${window.location.host}/app-ws`; // Use the host of the current page to ensure proxying
       console.log('(Effect Run) Connecting WebSocket via proxy to:', wsUrl);
       console.log('Debug: Attempting WebSocket connection with URL:', wsUrl);
       socket = new WebSocket(wsUrl); // Assign to local variable
@@ -158,6 +157,11 @@ function VideoUploader(): React.ReactElement {
                     // Log the received queue data
                     console.log('[WebSocket][queue_update]: Received queue data:', data.queue);
                     console.log('[WebSocket][queue_update]: Updating state with new queue.');
+                    // Check if any job has status 'complete'
+                    const completedJobs = data.queue.filter((job: QueueJob) => job.status === 'complete');
+                    if (completedJobs.length > 0) {
+                      console.log('[WebSocket][queue_update]: Jobs with status complete found:', completedJobs);
+                    }
                     setQueue(data.queue);
                     break;
                   case 'job_progress':
@@ -256,80 +260,46 @@ function VideoUploader(): React.ReactElement {
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
+    const file = event.target.files?.[0];
     resetTrimState(); // Reset trim times on new file selection
-    if (files && files.length > 0) {
-      // Check maximum file count
-      if (files.length > 10) {
-        setMessage('You can upload a maximum of 10 files at a time.');
-        setSelectedFiles(null);
-        setVideoSrc(null);
-        setThumbnailUrls({});
-        return;
-      }
-      // Check total size limit (5 GB = 5 * 1024 * 1024 * 1024 bytes)
-      const totalSizeLimit = 5 * 1024 * 1024 * 1024;
-      let totalSize = 0;
-      const selectedFilesArray: File[] = Array.from(files);
-      for (const file of selectedFilesArray) {
-        totalSize += file.size;
-      }
-      if (totalSize > totalSizeLimit) {
-        setMessage('Total size of selected files exceeds 5 GB limit.');
-        setSelectedFiles(null);
-        setVideoSrc(null);
-        setThumbnailUrls({});
-        return;
-      }
-      setSelectedFiles(selectedFilesArray);
+    if (file) {
+      setSelectedFile(file);
       setMessage('');
-      // Create thumbnails for all selected files
-      const newThumbnailUrls: Record<number, string> = {};
-      selectedFilesArray.forEach((file, index) => {
-        // Create a temporary URL for the video to load it for thumbnail generation
-        const tempUrl = URL.createObjectURL(file);
-        // Use a video element to load the file and capture a frame as thumbnail
-        const video = document.createElement('video');
-        video.src = tempUrl;
-        video.crossOrigin = 'Anonymous';
-        video.preload = 'metadata';
-        video.onloadeddata = () => {
-          // Seek to the first frame or a specific time (e.g., 1 second) for thumbnail
-          video.currentTime = 1;
-        };
-        video.onseeked = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const thumbnailUrl = canvas.toDataURL('image/png');
-            newThumbnailUrls[index] = thumbnailUrl;
-            // Update state with the new thumbnails
-            setThumbnailUrls((prevUrls) => ({
-              ...prevUrls,
-              ...newThumbnailUrls,
-            }));
-            // Set videoSrc to the first thumbnail if not set
-            if (index === 0) {
-              setVideoSrc(thumbnailUrl); // Set first thumbnail as primary preview
-            }
-          }
-          // Clean up: revoke the temporary URL and remove the video element
-          URL.revokeObjectURL(tempUrl);
-          video.remove();
-        };
-        video.onerror = () => {
-          setMessage(`Error loading video for thumbnail of ${file.name}.`);
-          URL.revokeObjectURL(tempUrl);
-          video.remove();
-        };
-      });
+      // Create a temporary URL for the video to load it for thumbnail generation
+      const tempUrl = URL.createObjectURL(file);
+      // Use a video element to load the file and capture a frame as thumbnail
+      const video = document.createElement('video');
+      video.src = tempUrl;
+      video.crossOrigin = 'Anonymous';
+      video.preload = 'metadata';
+      video.onloadeddata = () => {
+        // Seek to the first frame or a specific time (e.g., 1 second) for thumbnail
+        video.currentTime = 1;
+      };
+      video.onseeked = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const thumbnailUrl = canvas.toDataURL('image/png');
+          setVideoSrc(thumbnailUrl); // Set thumbnail as preview
+        }
+        // Clean up: revoke the temporary URL and remove the video element
+        URL.revokeObjectURL(tempUrl);
+        video.remove();
+      };
+      video.onerror = () => {
+        setMessage('Error loading video for thumbnail.');
+        URL.revokeObjectURL(tempUrl);
+        video.remove();
+      };
+      // Append video to body temporarily if needed, but it's not necessary for modern browsers
+      // document.body.appendChild(video); // Optional
     } else {
-      setSelectedFiles(null);
+      setSelectedFile(null);
       setVideoSrc(null);
-      setThumbnailUrls({});
       setMessage('No file selected.');
     }
   };
@@ -337,11 +307,12 @@ function VideoUploader(): React.ReactElement {
   // Effect to revoke object URL on unmount or file change
   useEffect(() => {
     return () => {
-      if (videoSrc) {
+      if (videoSrc && isPlayingFullVideo) {
         URL.revokeObjectURL(videoSrc);
+        setIsPlayingFullVideo(false);
       }
     };
-  }, [videoSrc]);
+  }, [videoSrc, isPlayingFullVideo]);
 
   // Handler for when video metadata is loaded
   const handleMetadataLoaded = () => {
@@ -394,61 +365,64 @@ function VideoUploader(): React.ReactElement {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedFiles || selectedFiles.length === 0) {
-      setMessage('Please select at least one video file first.');
+    if (!selectedFile) {
+      setMessage('Please select a video file first.');
       return;
     }
     setUploading(true);
-    setMessage(`Uploading ${selectedFiles.length} file(s)...`);
-    // Process each file individually
-    for (const file of selectedFiles) {
-      const formData = new FormData();
-      formData.append('video', file);
-      if (startTime !== 0 || endTime !== duration) {
-        formData.append('startTime', startTime.toString());
-        formData.append('endTime', endTime.toString());
-        console.log(`Appending trim times for ${file.name}: start=${startTime}, end=${endTime}`);
-      }
-      try {
-        // Use relative path which will be proxied by CRA dev server
-        const response = await fetch('/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        const result = await response.json();
-        if (response.ok && response.status === 202) {
-          // Check for 202 Accepted
-          setMessage(`Upload queued for ${file.name}! Job ID: ${result.jobId}.`);
-          console.log('Upload queued:', result);
-        } else {
-          // Handle immediate errors from server before queueing
-          setMessage(`Upload failed for ${file.name}: ${result.message || response.statusText || 'Server error'}`);
-        }
-      } catch (error) {
-        console.error(`Upload error for ${file.name}:`, error);
-        setMessage(`Upload error for ${file.name}: ${error instanceof Error ? error.message : 'Network error'}`);
-      }
+    setMessage(`Uploading ${selectedFile.name}...`);
+    const formData = new FormData();
+    formData.append('video', selectedFile);
+    if (startTime !== 0 || endTime !== duration) {
+      formData.append('startTime', startTime.toString());
+      formData.append('endTime', endTime.toString());
+      console.log(`Appending trim times: start=${startTime}, end=${endTime}`);
     }
-    setUploading(false);
-    setSelectedFiles(null);
-    // Reset file input visually
-    if (event.target instanceof HTMLFormElement) {
-      event.target.reset();
+    try {
+      // Use relative path which will be proxied by CRA dev server
+      const response = await fetch('/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const result = await response.json();
+      if (response.ok && response.status === 202) {
+        // Check for 202 Accepted
+        setMessage(`Upload queued! Job ID: ${result.jobId}.`);
+        console.log('Upload queued:', result);
+      } else {
+        // Handle immediate errors from server before queueing
+        setMessage(`Upload failed: ${result.message || response.statusText || 'Server error'}`);
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      setMessage(`Upload error: ${error instanceof Error ? error.message : 'Network error'}`);
+    } finally {
+      setUploading(false);
+      setSelectedFile(null);
+      // Reset file input visually
+      if (event.target instanceof HTMLFormElement) {
+        event.target.reset();
+      }
+      resetTrimState(); // Reset trim state after upload attempt
+      setVideoSrc(null);
     }
-    resetTrimState(); // Reset trim state after upload attempt
-    setVideoSrc(null);
   };
 
   // Add a function to handle full video playback on demand
-  const handlePlayFullVideo = (file: File, index: number) => {
-    if (!isPlayingFullVideo) {
-      const fullVideoUrl = URL.createObjectURL(file);
+  const handlePlayFullVideo = () => {
+    if (selectedFile && !isPlayingFullVideo) {
+      const fullVideoUrl = URL.createObjectURL(selectedFile);
       setVideoSrc(fullVideoUrl);
       setIsPlayingFullVideo(true);
       // Optionally, play the video if videoRef is available
       if (videoRef.current) {
-        videoRef.current.play();
+        videoRef.current.play().catch((error) => {
+          console.error('Error playing video:', error);
+          setMessage('Error playing video. Please try again.');
+        });
       }
+    } else if (!selectedFile) {
+      setMessage('No video file selected to play. Please upload a file first.');
     }
   };
 
@@ -457,44 +431,19 @@ function VideoUploader(): React.ReactElement {
       <h2>Upload Video for MP3 Conversion</h2>
       <form onSubmit={handleSubmit}>
         <div className="file-input-container">
-          <input
-            type="file"
-            id="videoFile"
-            accept="video/*"
-            onChange={handleFileChange}
-            className="file-input"
-            multiple
-          />
+          <input type="file" id="videoFile" accept="video/*" onChange={handleFileChange} className="file-input" />
           <label htmlFor="videoFile" className="file-input-label">
-            {selectedFiles && selectedFiles.length > 0
-              ? `${selectedFiles.length} file(s) selected`
-              : 'Choose video files (up to 10, max 5GB total)'}
+            {selectedFile ? selectedFile.name : 'Choose a video file'}
           </label>
         </div>
         {videoSrc && (
           <div className="video-preview-container">
             {!isPlayingFullVideo ? (
               <div className="thumbnail-container">
-                {selectedFiles &&
-                  selectedFiles.length > 0 &&
-                  selectedFiles.map((file, index) => (
-                    <div key={index} className="thumbnail-item">
-                      {thumbnailUrls[index] ? (
-                        <img
-                          src={thumbnailUrls[index]}
-                          alt={`Thumbnail for ${file.name}`}
-                          className="video-thumbnail"
-                          onError={() => setMessage(`Error loading thumbnail for ${file.name}`)}
-                        />
-                      ) : (
-                        <div className="thumbnail-placeholder">Generating thumbnail...</div>
-                      )}
-                      <div className="thumbnail-filename">{file.name}</div>
-                      <button type="button" onClick={() => handlePlayFullVideo(file, index)} className="play-button">
-                        Play & Trim Video
-                      </button>
-                    </div>
-                  ))}
+                <img src={videoSrc} alt="Video Thumbnail" className="video-thumbnail" />
+                <button type="button" onClick={handlePlayFullVideo} className="play-button">
+                  Play & Trim Video
+                </button>
               </div>
             ) : (
               <video
@@ -511,32 +460,31 @@ function VideoUploader(): React.ReactElement {
                   <span>Total Duration: {formatTime(duration)}</span>
                   <span>Selected Duration: {formatTime(endTime - startTime)}</span>
                 </div>
-                <div className="dual-slider-container">
-                  <div className="time-labels">
-                    <span className="time-label start-label">Start Time (s)</span>
-                    <span className="time-label end-label">End Time (s)</span>
-                  </div>
-                  <div className="dual-slider">
-                    <input
-                      type="range"
-                      min={0}
-                      max={duration}
-                      step={0.0001}
-                      value={startTime}
-                      onChange={handleStartTimeChange}
-                      className="time-slider start-slider"
-                    />
-                    <input
-                      type="range"
-                      min={0}
-                      max={duration}
-                      step={0.0001}
-                      value={endTime}
-                      onChange={handleEndTimeChange}
-                      className="time-slider end-slider"
-                    />
-                  </div>
-                  <div className="time-inputs-below">
+                <div className="slider-container">
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration}
+                    step={0.1}
+                    value={startTime}
+                    onChange={handleStartTimeChange}
+                    className="time-slider"
+                  />
+                  <input
+                    type="range"
+                    min={startTime} // Dynamic min based on startTime
+                    // Add a small epsilon to max to tolerate rounding issues near the end
+                    max={duration + 0.00001} // Use epsilon smaller than step
+                    step="0.001"
+                    value={endTime}
+                    onChange={handleEndTimeChange}
+                    className="time-slider"
+                    required
+                  />
+                </div>
+                <div className="time-inputs">
+                  <div>
+                    <label>Start Time (seconds): </label>
                     <input
                       type="number"
                       min={0}
@@ -544,16 +492,19 @@ function VideoUploader(): React.ReactElement {
                       step={0.0001}
                       value={startTime.toFixed(4)}
                       onChange={handleStartTimeChange}
-                      className="time-input start-input"
+                      className="time-input"
                     />
+                  </div>
+                  <div>
+                    <label>End Time (seconds): </label>
                     <input
                       type="number"
                       min={startTime}
-                      max={duration}
+                      max={duration + 0.00001}
                       step={0.0001}
                       value={endTime.toFixed(4)}
                       onChange={handleEndTimeChange}
-                      className="time-input end-input"
+                      className="time-input"
                     />
                   </div>
                 </div>
@@ -561,13 +512,13 @@ function VideoUploader(): React.ReactElement {
             )}
           </div>
         )}
-        <button type="submit" disabled={!selectedFiles || selectedFiles.length === 0 || uploading}>
+        <button type="submit" disabled={!selectedFile || uploading}>
           {/* Use a more descriptive button text now */}
           {uploading
             ? 'Uploading...'
             : startTime !== 0 || endTime !== duration
               ? 'Trim & Convert'
-              : 'Convert Full Video(s)'}
+              : 'Convert Full Video'}
         </button>
       </form>
       {message && <p className="message">{message}</p>}
@@ -595,6 +546,10 @@ function VideoUploader(): React.ReactElement {
                   >
                     Download MP3
                   </a>
+                )}
+                {/* Display error message for failed jobs */}
+                {job.status === 'error' && (
+                  <span className="error-message"> (Conversion failed. The video may not contain a valid stream.)</span>
                 )}
                 {/* TODO: Add download button for completed jobs */}
               </li>

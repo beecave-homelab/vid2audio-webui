@@ -235,7 +235,9 @@ const processQueue = async () => {
       completedJobs.push(job);
       console.log(`[Queue]: Moved completed job ${job.id} to completed list. Total completed: ${completedJobs.length}`);
     } else if (job.status === 'error') {
-      console.log(`[Queue]: Discarding errored job ${job.id} from queue.`);
+      job.completedAt = Date.now();
+      completedJobs.push(job);
+      console.log(`[Queue]: Moved errored job ${job.id} to completed list. Total completed: ${completedJobs.length}`);
       // Optionally delete the original file for errored job
       if (fs.existsSync(job.originalPath)) {
         fs.unlink(job.originalPath, (err) => {
