@@ -115,6 +115,9 @@ export function useConversionStatus() {
               console.log('[WebSocket][queue_update]: Updating state with new queue:', data.queue);
               setQueue(data.queue);
               break;
+            case 'connection':
+              console.log('[WebSocket][connection]: Connection established with server:', data.message);
+              break;
             // Handle other message types if needed (job_progress, job_complete, etc.)
             default:
               console.log('Unknown or unhandled message type:', data.type);

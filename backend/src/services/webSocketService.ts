@@ -1,6 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
 import express from 'express';
+import { IncomingMessage } from 'http';
+import net from 'net';
 
 // Define the path for application WebSocket connections
 const wsPath = '/app-ws';
@@ -28,7 +30,7 @@ export const initializeWebSocket = (app: express.Express) => {
       clients.delete(ws);
     });
 
-    ws.on('error', (error) => {
+    ws.on('error', (error: any) => {
       console.error('[WebSocket]: Error:', error);
       clients.delete(ws);
     });
@@ -38,10 +40,10 @@ export const initializeWebSocket = (app: express.Express) => {
   });
 
   // Handle server upgrade requests specifically for the WebSocket path
-  server.on('upgrade', (request, socket, head) => {
+  server.on('upgrade', (request: IncomingMessage, socket: net.Socket, head: any) => {
     const pathname = request.url;
     if (pathname === wsPath) {
-      wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.handleUpgrade(request, socket, head, (ws: any) => {
         wss.emit('connection', ws, request);
       });
     } else {
